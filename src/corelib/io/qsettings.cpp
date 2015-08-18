@@ -78,6 +78,7 @@
 #endif
 
 #include <stdlib.h>
+#include <stdio.h>
 
 #ifndef CSIDL_COMMON_APPDATA
 #define CSIDL_COMMON_APPDATA	0x0023  // All Users\Application Data
@@ -1566,6 +1567,9 @@ void QConfFileSettingsPrivate::syncConfFile(int confFileNo)
         ensureAllSectionsParsed(confFile);
         ParsedSettingsMap mergedKeys = confFile->mergedKeyMap();
 
+         QTemporaryFile tempfile(confFile->name);
+         tempfile.open();
+
         if (file.isWritable()) {
 #ifdef Q_OS_MAC
             if (format == QSettings::NativeFormat) {
@@ -1573,18 +1577,8 @@ void QConfFileSettingsPrivate::syncConfFile(int confFileNo)
             } else
 #endif
             {
-                file.seek(0);
-                file.resize(0);
-
                 if (format <= QSettings::IniFormat) {
-                    ok = writeIniFile(file, mergedKeys);
-                    if (!ok) {
-                        // try to restore old data; might work if the disk was full and the new data
-                        // was larger than the old data
-                        file.seek(0);
-                        file.resize(0);
-                        writeIniFile(file, confFile->originalKeys);
-                    }
+                    ok = writeIniFile(tempfile, mergedKeys);
                 } else {
                     if (writeFunc) {
                         QSettings::SettingsMap tempOriginalKeys;
@@ -1594,7 +1588,7 @@ void QConfFileSettingsPrivate::syncConfFile(int confFileNo)
                             tempOriginalKeys.insert(i.key(), i.value());
                             ++i;
                         }
-                        ok = writeFunc(file, tempOriginalKeys);
+                        ok = writeFunc(tempfile, tempOriginalKeys);
                     } else {
                         ok = false;
                     }
@@ -1609,6 +1603,9 @@ void QConfFileSettingsPrivate::syncConfFile(int confFileNo)
             confFile->originalKeys = mergedKeys;
             confFile->addedKeys.clear();
             confFile->removedKeys.clear();
+            tempfile.flush();
+            fsync(tempfile.handle());
+            rename(qPrintable(tempfile.fileName()),qPrintable(confFile->name));
 
             QFileInfo fileInfo(confFile->name);
             confFile->size = fileInfo.size();
